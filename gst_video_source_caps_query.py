@@ -1,5 +1,6 @@
 from __future__ import division
 import logging
+import platform
 
 from path import path
 import gst
@@ -90,6 +91,25 @@ class GstVideoSourceCapabilities(object):
                 info[k] = v
         return info
 
+def get_video_source():
+    if platform.system() == 'Linux':
+        video_source = gst.element_factory_make('v4l2src', 'video_source')
+    else:
+        video_source = gst.element_factory_make('dshowvideosrc', 'video_source')
+    return video_source
+
+
+def get_video_source_configs(video_source):
+    logging.basicConfig(format='%(message)s', level=logging.INFO)
+
+    if platform.system() == 'Linux':
+        devices = path('/dev/v4l/by-id').listdir()
+        device_key = 'device'
+    else:
+        devices = video_source.probe_get_values_name('device-name')
+        device_key = 'device-name'
+    return device_key, devices
+
 
 def parse_args():
     """Parses arguments, returns ``(options, args)``."""
@@ -120,23 +140,11 @@ Queries for supported video modes for GStreamer input devices.""",
     return args
 
 
-
-
-if __name__ == '__main__':
+def main():
     args = parse_args()
 
-    import platform
-
-    logging.basicConfig(format='%(message)s', level=logging.INFO)
-
-    if platform.system() == 'Linux':
-        video_source = gst.element_factory_make('v4l2src', 'video_source')
-        devices = path('/dev/v4l/by-id').listdir()
-        device_key = 'device'
-    else:
-        video_source = gst.element_factory_make('dshowvideosrc', 'video_source')
-        devices = video_source.probe_get_values_name('device-name')
-        device_key = 'device-name'
+    video_source = get_video_source()
+    device_key, devices = get_video_source_configs(video_source)
 
     for video_device in devices:
         video_source.set_property(device_key, video_device)
@@ -152,3 +160,7 @@ if __name__ == '__main__':
         for k, v in video_caps.unique_settings(video_caps.get_allowed_caps(**kwargs)).items():
             print 3 * ' ', '%s: %s' % (k, v)
         print 72 * '-'
+
+
+if __name__ == '__main__':
+    main()
