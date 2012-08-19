@@ -1,7 +1,8 @@
 from __future__ import division
+import logging
 
 from path import path
-#import gst
+import gst
 
 
 class GstVideoSourceCapabilities(object):
@@ -11,13 +12,16 @@ class GstVideoSourceCapabilities(object):
         video_sink = gst.element_factory_make('autovideosink', 'video_sink')
         pipeline.add(video_source)
         pipeline.add(video_sink)
-        video_source.link(video_sink)
-        pipeline.set_state(gst.STATE_READY)
-        self.allowed_caps = [dict([(k, c[k])
-                for k in c.keys()] + [('name', c.get_name())])
-                        for c in source_pad.get_allowed_caps()]
-        pipeline.set_state(gst.STATE_NULL)
-        self._allowed_info = self.unique_settings(self.allowed_caps)
+        try:
+            video_source.link(video_sink)
+            pipeline.set_state(gst.STATE_READY)
+            self.allowed_caps = [dict([(k, c[k])
+                    for k in c.keys()] + [('name', c.get_name())])
+                            for c in source_pad.get_allowed_caps()]
+            pipeline.set_state(gst.STATE_NULL)
+            self._allowed_info = self.unique_settings(self.allowed_caps)
+        finally:
+            del pipeline
 
     def extract_format(self, format_obj):
         return format_obj['format'].fourcc
@@ -28,7 +32,13 @@ class GstVideoSourceCapabilities(object):
             for fps in framerate_obj['framerate']:
                 framerates.append(fps.num / fps.denom)
         except TypeError:
-            fps = framerate_obj['framerate']
+            if isinstance(framerate_obj['framerate'], gst.FractionRange):
+                for fps in (framerate_obj['framerate'].low,
+                        framerate_obj['framerate'].high):
+                    framerates.append(fps.num / fps.denom)
+            else:
+                fps = framerate_obj['framerate']
+                framerates.append(fps.num / fps.denom)
             framerates.append(fps.num / fps.denom)
         return framerates
 
@@ -115,15 +125,30 @@ Queries for supported video modes for GStreamer input devices.""",
 if __name__ == '__main__':
     args = parse_args()
 
-    # For Linux
-    video_source = gst.element_factory_make('v4l2src', 'video_source')
+    import platform
 
-    for video_device in path('/dev/v4l/by-id').listdir():
-        video_source.set_property('device', video_device)
-        video_caps = GstVideoSourceCapabilities(video_source)
+    logging.basicConfig(format='%(message)s', level=logging.INFO)
+
+    if platform.system() == 'Linux':
+        video_source = gst.element_factory_make('v4l2src', 'video_source')
+        devices = path('/dev/v4l/by-id').listdir()
+        device_key = 'device'
+    else:
+        video_source = gst.element_factory_make('dshowvideosrc', 'video_source')
+        devices = video_source.probe_get_values_name('device-name')
+        device_key = 'device-name'
+
+    for video_device in devices:
+        video_source.set_property(device_key, video_device)
+        try:
+            video_caps = GstVideoSourceCapabilities(video_source)
+        except gst.LinkError:
+            logging.warning('error querying device %s (skipping)' % video_device)
+            continue
         kwargs = {'framerate': args.fps, 'format_': args.format_, }
         if args.width and args.height:
             kwargs['dimensions'] = (args.width, args.height)
-        print '%s:' % video_device.name
+        print '%s:' % getattr(video_device, 'name', video_device)
         for k, v in video_caps.unique_settings(video_caps.get_allowed_caps(**kwargs)).items():
             print 3 * ' ', '%s: %s' % (k, v)
+        print 72 * '-'
