@@ -4,7 +4,13 @@ import platform
 from pprint import pprint
 
 from path import path
+import pygst
+pygst.require("0.10")
 import gst
+
+
+class DeviceNotFound(Exception):
+    pass
 
 
 class GstVideoSourceManager(object):
@@ -23,11 +29,21 @@ class GstVideoSourceManager(object):
         logging.basicConfig(format='%(message)s', level=logging.INFO)
 
         if platform.system() == 'Linux':
-            devices = path('/dev/v4l/by-id').listdir()
+            try:
+                devices = path('/dev/v4l/by-id').listdir()
+            except OSError:
+                raise DeviceNotFound, 'No devices available'
+                #devices = [p for p in path('/dev').listdir()
+                        #if p.name.startswith('video')]
             device_key = 'device'
         else:
-            devices = self.get_video_source().probe_get_values_name(
-                    'device-name')
+            try:
+                devices = self.get_video_source().probe_get_values_name(
+                        'device-name')
+            except:
+                devices = []
+            if not devices:
+                raise DeviceNotFound, 'No devices available'
             device_key = 'device-name'
         return device_key, devices
 
@@ -99,6 +115,12 @@ class GstVideoSourceCapabilities(object):
         finally:
             del pipeline
 
+    def extract_dimensions(self, dimensions_obj):
+        for field in ['width', 'height']:
+            if isinstance(dimensions_obj[field], gst.IntRange):
+                dimensions_obj[field] = dimensions_obj[field].high
+        return dimensions_obj['width'], dimensions_obj['height']
+
     def extract_format(self, format_obj):
         return format_obj['format'].fourcc
 
@@ -138,16 +160,19 @@ class GstVideoSourceCapabilities(object):
         allowed_caps = self.get_allowed_caps(dimensions=dimensions,
                 framerate=framerate, format_=format_, name=name)
         for cap in allowed_caps:
-            cap['framerate'] = self.extract_fps(cap)
-            cap['dimensions'] = cap['width'], cap['height']
+            if framerate:
+                cap['framerate'] = (framerate, )
+            else:
+                cap['framerate'] = self.extract_fps(cap)
+            cap['dimensions'] = self.extract_dimensions(cap)
             cap['fourcc'] = self.extract_format(cap)
         return allowed_caps
 
     def get_allowed_caps(self, dimensions=None, framerate=None, format_=None, name=None):
         allowed_caps = self.allowed_caps[:]
         if dimensions:
-            allowed_caps = [c for c in allowed_caps if dimensions == (
-                    c['width'], c['height'])]
+            allowed_caps = [c for c in allowed_caps
+                    if dimensions == self.extract_dimensions(c)]
         if framerate:
             allowed_caps = [c for c in allowed_caps
                     if framerate in self.extract_fps(c)]
@@ -163,7 +188,7 @@ class GstVideoSourceCapabilities(object):
         for d in caps:
             framerates.extend(self.extract_fps(d))
         framerates = tuple(sorted(set(framerates)))
-        dimensions = tuple(sorted(set([(d['width'], d['height'])
+        dimensions = tuple(sorted(set([self.extract_dimensions(d)
                 for d in caps])))
         formats = tuple(sorted(set([self.extract_format(d)
                 for d in caps])))
@@ -215,7 +240,9 @@ def main():
     video_source_manager = GstVideoSourceManager()
     video_source_manager.query_devices(**kwargs)
     caps = video_source_manager.query_device_extracted_caps(**kwargs)
-    pprint(caps)
+    format_cap = lambda c: '%(width)4d x%(height)4d %(framerate)3dfps (%(fourcc)s)' % c
+    pprint(sorted(['[%s] %s' % (getattr(device, 'name', device)[:20],
+            format_cap(c)) for device, caps in caps.items() for c in caps]))
 
 
 if __name__ == '__main__':
