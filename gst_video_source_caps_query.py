@@ -105,7 +105,7 @@ class GstVideoSourceCapabilities(object):
         framerates = []
         try:
             for fps in framerate_obj['framerate']:
-                framerates.append(fps.num // fps.denom)
+                framerates.append(fps.num / fps.denom)
         except TypeError:
             if isinstance(framerate_obj['framerate'], gst.FractionRange):
                 for fps in (framerate_obj['framerate'].low,
@@ -115,7 +115,7 @@ class GstVideoSourceCapabilities(object):
                 fps = framerate_obj['framerate']
                 framerates.append(fps.num // fps.denom)
             framerates.append(fps.num // fps.denom)
-        return framerates
+        return sorted(set(framerates))
 
     @property
     def framerates(self):
