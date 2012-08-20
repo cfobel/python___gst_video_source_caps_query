@@ -56,6 +56,7 @@ class GstVideoSourceManager(object):
                             name=name)
             for combined_cap in combined_caps:
                 framerates = combined_cap['framerate']
+                del combined_cap['format']
                 for framerate in framerates:
                     cap = combined_cap.copy()
                     cap['framerate'] = framerate
