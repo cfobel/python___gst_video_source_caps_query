@@ -96,6 +96,30 @@ class GstVideoSourceManager(object):
                 print 3 * ' ', '%s: %s' % (k, v)
             print 72 * '-'
 
+    @staticmethod
+    def get_available_video_modes(**kwargs):
+        video_source_manager = GstVideoSourceManager()
+        video_source_manager.query_devices(**kwargs)
+        caps = video_source_manager.query_device_extracted_caps(**kwargs)
+        video_modes = []
+        for device, caps in caps.items():
+            for c in caps:
+                c['device'] = getattr(device, 'name', device)
+                video_modes.append(c)
+        return video_modes
+
+    @staticmethod
+    def validate(extracted_caps):
+        try:
+            extracted_caps = sorted(extracted_caps.items())
+        except:
+            raise
+        video_modes = GstVideoSourceManager.get_available_video_modes()
+        mode_map = dict([(sorted(v), v) for v in video_modes])
+        if extracted_caps not in mode_map:
+            raise ValueError, 'Unsupported video mode'
+        return mode_map[extracted_caps]
+
 
 class GstVideoSourceCapabilities(object):
     def __init__(self, video_source):
