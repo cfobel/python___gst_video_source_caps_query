@@ -104,7 +104,7 @@ class GstVideoSourceManager(object):
         video_modes = []
         for device, caps in caps.items():
             for c in caps:
-                c['device'] = getattr(device, 'name', device)
+                c['device'] = device
                 video_modes.append(c)
         return video_modes
 
@@ -223,6 +223,21 @@ class GstVideoSourceCapabilities(object):
             if v:
                 info[k] = v
         return info
+
+
+class FilteredInput(gst.Bin):
+    def __init__(self, name, caps_str, video_src):
+        super(FilteredInput, self).__init__(name)
+
+        caps = gst.Caps(caps_str)
+        caps_filter = gst.element_factory_make('capsfilter', 'caps_filter')
+        caps_filter.set_property('caps', caps)
+
+        self.add(video_src, caps_filter)
+        video_src.link(caps_filter)
+
+        src_gp = gst.GhostPad("src", caps_filter.get_pad('src'))
+        self.add_pad(src_gp)
 
 
 def parse_args():
