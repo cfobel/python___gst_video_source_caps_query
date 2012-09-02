@@ -25,7 +25,8 @@ class GstVideoSourceManager(object):
             video_source = gst.element_factory_make('dshowvideosrc', 'video_source')
         return video_source
 
-    def get_video_source_configs(self):
+    @staticmethod
+    def get_video_source_configs():
         logging.basicConfig(format='%(message)s', level=logging.INFO)
 
         if platform.system() == 'Linux':
@@ -38,7 +39,7 @@ class GstVideoSourceManager(object):
             device_key = 'device'
         else:
             try:
-                devices = self.get_video_source().probe_get_values_name(
+                devices = GstVideoSourceManager.get_video_source().probe_get_values_name(
                         'device-name')
             except:
                 devices = []
@@ -49,9 +50,10 @@ class GstVideoSourceManager(object):
 
     def _device_iter(self):
         for video_device in self.devices:
-            self.get_video_source().set_property(self.device_key, video_device)
+            video_source = self.get_video_source()
+            video_source.set_property(self.device_key, video_device)
             try:
-                video_caps = GstVideoSourceCapabilities(self.get_video_source())
+                video_caps = GstVideoSourceCapabilities(video_source)
             except gst.LinkError:
                 logging.warning('error querying device %s (skipping)' % video_device)
                 continue
@@ -99,7 +101,6 @@ class GstVideoSourceManager(object):
     @staticmethod
     def get_available_video_modes(**kwargs):
         video_source_manager = GstVideoSourceManager()
-        video_source_manager.query_devices(**kwargs)
         caps = video_source_manager.query_device_extracted_caps(**kwargs)
         video_modes = []
         for device, caps in caps.items():
