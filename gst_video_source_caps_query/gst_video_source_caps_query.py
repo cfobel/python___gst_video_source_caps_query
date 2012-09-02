@@ -1,4 +1,5 @@
 from __future__ import division
+from collections import namedtuple
 import logging
 import platform
 from pprint import pprint
@@ -7,6 +8,9 @@ from path import path
 import pygst
 pygst.require("0.10")
 import gst
+
+
+Fps = namedtuple('Fps', 'num denom')
 
 
 class DeviceNotFound(Exception):
@@ -61,8 +65,8 @@ class GstVideoSourceManager(object):
 
     @staticmethod
     def get_caps_string(extracted_cap):
-        return '%(name)s,width=%(width)s,height=%(height)s,fourcc=%(fourcc)s,'\
-                'framerate=%(framerate)d/1' % extracted_cap
+        return '{name:s},width={width:d},height={height:d},fourcc={fourcc:s},'\
+                'framerate={framerate.num:d}/{framerate.denom:d}'.format(**extracted_cap)
     
     def query_device_extracted_caps(self, dimensions=None, framerate=None, format_=None,
             name=None):
@@ -153,16 +157,16 @@ class GstVideoSourceCapabilities(object):
         framerates = []
         try:
             for fps in framerate_obj['framerate']:
-                framerates.append(fps.num / fps.denom)
+                framerates.append(Fps(fps.num, fps.denom))
         except TypeError:
             if isinstance(framerate_obj['framerate'], gst.FractionRange):
                 for fps in (framerate_obj['framerate'].low,
                         framerate_obj['framerate'].high):
-                    framerates.append(fps.num // fps.denom)
+                    framerates.append(Fps(fps.num, fps.denom))
             else:
                 fps = framerate_obj['framerate']
-                framerates.append(fps.num // fps.denom)
-            framerates.append(fps.num // fps.denom)
+                framerates.append(Fps(fps.num, fps.denom))
+            #framerates.append({'num': fps.num, 'denom': fps.denom})
         return sorted(set(framerates))
 
     @property
@@ -270,6 +274,11 @@ Queries for supported video modes for GStreamer input devices.""",
     return args
 
 
+def format_cap(c):
+    return '[{width:4d} {height:4d} {fps:2.0f}fps '\
+        '({fourcc:s})]'.format(fps=c['framerate'].num / c['framerate'].denom, **c)
+                                                                 
+
 def main():
     args = parse_args()
 
@@ -280,7 +289,6 @@ def main():
     video_source_manager = GstVideoSourceManager()
     video_source_manager.query_devices(**kwargs)
     caps = video_source_manager.query_device_extracted_caps(**kwargs)
-    format_cap = lambda c: '%(width)4d x%(height)4d %(framerate)3dfps (%(fourcc)s)' % c
     pprint(sorted(['[%s] %s' % (getattr(device, 'name', device)[:20],
             format_cap(c)) for device, caps in caps.items() for c in caps]))
 
