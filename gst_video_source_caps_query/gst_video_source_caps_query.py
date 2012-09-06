@@ -5,9 +5,13 @@ import platform
 from pprint import pprint
 
 from path import path
-import pygst
-pygst.require("0.10")
-import gst
+try:
+    import pygst
+    pygst.require("0.10")
+except ImportError:
+    pass
+finally:
+    import gst
 
 
 Fps = namedtuple('Fps', 'num denom')
