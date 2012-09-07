@@ -1,6 +1,7 @@
 from __future__ import division
 from pprint import pprint, pformat
 from multiprocessing import Process, Pipe
+import time
 
 try:
     import pygst
@@ -98,10 +99,11 @@ def test_pipeline():
     glib.MainLoop().run()
 
 
-def get_pipeline():
+def get_pipeline(video_source=None):
     pipeline = gst.Pipeline()
     video_sink = gst.element_factory_make('autovideosink', 'video_sink')
-    video_source = select_video_source()
+    if video_source is None:
+        video_source = select_video_source()
     pipeline.add(video_sink, video_source)
     video_source.link(video_sink)
     return pipeline
@@ -123,21 +125,37 @@ class _GStreamerProcess(Process):
         self._main_loop.run()
 
     def _finish(self):
+        self._cleanup_pipeline()
         self._main_loop.quit()
-        del self._pipeline
-        self._pipeline = None
+
+    def _cleanup_pipeline(self):
+        if self._pipeline:
+            del self._pipeline
+            self._pipeline = None
 
     def _process_request(self, request):
-        if request['command'] == 'start':
+        if request['command'] == 'create':
+            '''
+            Create a pipeline
+            '''
             if self._pipeline is None:
-                self._pipeline = get_pipeline()
-            self._pipeline.set_state(gst.STATE_PLAYING)
+                device, caps_str = request['video_caps']
+                video_source = create_video_source(device, caps_str)
+                self._pipeline = get_pipeline(video_source)
+        elif request['command'] == 'start':
+            if self._pipeline:
+                self._pipeline.set_state(gst.STATE_PLAYING)
         elif request['command'] == 'stop':
             if self._pipeline:
                 self._pipeline.set_state(gst.STATE_NULL)
+        elif request['command'] == 'reset':
+            self._cleanup_pipeline()
         elif request['command'] == 'finish':
             self._finish()
             raise SystemExit
+        elif request['command'] == 'select_video_caps':
+            result = select_video_caps()
+            return result
 
     def _update_state(self):
         while self._pipe.poll():
@@ -153,20 +171,26 @@ class _GStreamerProcess(Process):
 
 
 class GStreamerProcess(object):
-    def __init__(self):
-        self.master_pipe, self.worker_pipe = Pipe()
-        self._init_child()
+    def select_video_caps(self):
+        self.master_pipe.send({'command': 'select_video_caps',
+                'ack': True})
+        result = self.master_pipe.recv()
+        return result['result']
 
-    def _init_child(self):
-        self._process = _GStreamerProcess(args=(self.worker_pipe, ))
-        self._process.start(self.worker_pipe)
+    def start(self):
+        self.master_pipe.send({'command': 'start', 'ack': True})
 
     def run(self):
-        import time
-        print 'sending START'
-        self.master_pipe.send({'command': 'start', 'ack': True})
+        self.master_pipe, self.worker_pipe = Pipe()
+        self._process = _GStreamerProcess(args=(self.worker_pipe, ))
+        self._process.start(self.worker_pipe)
+        self.master_pipe.send({'command': 'reset'})
+        video_caps = self.select_video_caps()
+        self.master_pipe.send({'command': 'create', 'ack': True,
+                'video_caps': video_caps})
         result = self.master_pipe.recv()
-        print result
+        print 'sending START'
+        self.master_pipe.send({'command': 'start'})
         time.sleep(1)
         print 'sending STOP'
         self.master_pipe.send({'command': 'stop'})
@@ -179,10 +203,11 @@ class GStreamerProcess(object):
             self.master_pipe.send({'command': 'stop'})
         print 'sending FINISH'
         self.master_pipe.send({'command': 'finish'})
-        p.join()
+        self._process.join()
 
 
 if __name__ == '__main__':
     print 'Using GStreamerProcess'
     p = GStreamerProcess()
+    p.run()
     p.run()
