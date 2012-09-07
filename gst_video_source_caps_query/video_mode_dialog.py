@@ -157,6 +157,9 @@ class _GStreamerProcess(Process):
         elif request['command'] == 'select_video_caps':
             result = select_video_caps()
             return result
+        elif request['command'] == 'get_available_video_modes':
+            result = get_available_video_modes(**request['kwargs'])
+            return result
 
     def _update_state(self):
         while self._pipe.poll():
@@ -183,8 +186,8 @@ class GStreamerProcess(object):
                 'ack': True})
         # Wait for result so we block until video caps have been
         # selected
-        result = self.master_pipe.recv()
-        return result['result']
+        response = self.master_pipe.recv()
+        return response['result']
 
     def create(self, video_caps):
         self.master_pipe.send({'command': 'create', 'video_caps': video_caps})
@@ -193,18 +196,18 @@ class GStreamerProcess(object):
         logging.debug('sending START')
         self.master_pipe.send({'command': 'start', 'ack': block})
         if block:
-            result = self.master_pipe.recv()
+            response = self.master_pipe.recv()
 
     def stop(self, block=True):
         logging.debug('sending STOP')
         self.master_pipe.send({'command': 'stop', 'ack': block})
         if block:
-            result = self.master_pipe.recv()
+            response = self.master_pipe.recv()
 
     def reset(self, block=True):
         self.master_pipe.send({'command': 'reset', 'ack': block})
         if block:
-            result = self.master_pipe.recv()
+            response = self.master_pipe.recv()
 
     def run(self):
         video_caps = self.select_video_caps()
@@ -227,11 +230,19 @@ class GStreamerProcess(object):
             self._process.join()
             self._process = None
 
+    def get_available_video_modes(self, **kwargs):
+        self.master_pipe.send({'command': 'get_available_video_modes',
+                'kwargs': kwargs, 'ack': True})
+        response = self.master_pipe.recv()
+        return response['result']
+
+
 
 if __name__ == '__main__':
     logging.basicConfig(format='%(message)s', loglevel=logging.INFO)
     logging.info('Using GStreamerProcess')
     p = GStreamerProcess()
+    print p.get_available_video_modes(format_='YUY2')
     p.run()
     p.run()
     p.join()
