@@ -2,6 +2,7 @@ from __future__ import division
 from pprint import pprint, pformat
 from multiprocessing import Process, Pipe
 import time
+import logging
 
 try:
     import pygst
@@ -160,7 +161,7 @@ class _GStreamerProcess(Process):
     def _update_state(self):
         while self._pipe.poll():
             request = self._pipe.recv()
-            print '  [request] {}'.format(request)
+            logging.debug('  [request] {}'.format(request))
             try:
                 result = self._process_request(request)
                 if request.get('ack', False):
@@ -171,43 +172,66 @@ class _GStreamerProcess(Process):
 
 
 class GStreamerProcess(object):
-    def select_video_caps(self):
-        self.master_pipe.send({'command': 'select_video_caps',
-                'ack': True})
-        result = self.master_pipe.recv()
-        return result['result']
-
-    def start(self):
-        self.master_pipe.send({'command': 'start', 'ack': True})
-
-    def run(self):
+    def __init__(self):
         self.master_pipe, self.worker_pipe = Pipe()
         self._process = _GStreamerProcess(args=(self.worker_pipe, ))
         self._process.start(self.worker_pipe)
-        self.master_pipe.send({'command': 'reset'})
-        video_caps = self.select_video_caps()
-        self.master_pipe.send({'command': 'create', 'ack': True,
-                'video_caps': video_caps})
+        self._finished = False
+
+    def select_video_caps(self):
+        self.master_pipe.send({'command': 'select_video_caps',
+                'ack': True})
+        # Wait for result so we block until video caps have been
+        # selected
         result = self.master_pipe.recv()
-        print 'sending START'
-        self.master_pipe.send({'command': 'start'})
-        time.sleep(1)
-        print 'sending STOP'
-        self.master_pipe.send({'command': 'stop'})
-        for i in range(3):
-            time.sleep(1)
-            print 'sending START'
-            self.master_pipe.send({'command': 'start'})
-            time.sleep(1)
-            print 'sending STOP'
-            self.master_pipe.send({'command': 'stop'})
-        print 'sending FINISH'
+        return result['result']
+
+    def create(self, video_caps):
+        self.master_pipe.send({'command': 'create', 'video_caps': video_caps})
+
+    def start(self, block=True):
+        logging.debug('sending START')
+        self.master_pipe.send({'command': 'start', 'ack': block})
+        if block:
+            result = self.master_pipe.recv()
+
+    def stop(self, block=True):
+        logging.debug('sending STOP')
+        self.master_pipe.send({'command': 'stop', 'ack': block})
+        if block:
+            result = self.master_pipe.recv()
+
+    def reset(self, block=True):
+        self.master_pipe.send({'command': 'reset', 'ack': block})
+        if block:
+            result = self.master_pipe.recv()
+
+    def run(self):
+        video_caps = self.select_video_caps()
+        self.create(video_caps)
+        for i in range(1):
+            self.start()
+            time.sleep(1.5)
+            self.stop()
+        self.reset()
+
+    def finish(self):
+        logging.debug('sending FINISH')
         self.master_pipe.send({'command': 'finish'})
-        self._process.join()
+        self._finished = True
+
+    def join(self):
+        if not self._finished:
+            self.finish()
+        if self._process:
+            self._process.join()
+            self._process = None
 
 
 if __name__ == '__main__':
-    print 'Using GStreamerProcess'
+    logging.basicConfig(format='%(message)s', loglevel=logging.INFO)
+    logging.info('Using GStreamerProcess')
     p = GStreamerProcess()
     p.run()
     p.run()
+    p.join()
