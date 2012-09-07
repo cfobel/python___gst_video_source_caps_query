@@ -3,6 +3,7 @@ from collections import namedtuple
 import logging
 import platform
 from pprint import pprint
+from multiprocessing import Process, Pipe
 
 from path import path
 try:
@@ -72,8 +73,8 @@ class GstVideoSourceManager(object):
         return '{name:s},width={width:d},height={height:d},fourcc={fourcc:s},'\
                 'framerate={framerate.num:d}/{framerate.denom:d}'.format(**extracted_cap)
     
-    def query_device_extracted_caps(self, dimensions=None, framerate=None, format_=None,
-            name=None):
+    def _query_device_extracted_caps(self, pipe_conn, dimensions=None,
+            framerate=None, format_=None, name=None):
         extracted_device_caps = {}
         for video_device, video_caps in self._device_iter():
             final_caps = []
@@ -88,6 +89,17 @@ class GstVideoSourceManager(object):
                     cap['framerate'] = framerate
                     final_caps.append(cap)
             extracted_device_caps[video_device] = final_caps
+        pipe_conn.send(extracted_device_caps)
+
+    def query_device_extracted_caps(self, dimensions=None, framerate=None, format_=None,
+            name=None):
+        master_pipe, worker_pipe = Pipe()
+        p = Process(target=self._query_device_extracted_caps, args=(worker_pipe,
+                ), kwargs={ 'dimensions': dimensions, 'framerate': framerate,
+                        'format_': format_, 'name': name, })
+        p.start()
+        extracted_device_caps = master_pipe.recv()
+        p.join()
         return extracted_device_caps
 
     def query_device_caps(self, dimensions=None, framerate=None, format_=None,
@@ -108,6 +120,16 @@ class GstVideoSourceManager(object):
 
     @staticmethod
     def get_available_video_modes(**kwargs):
+        master_pipe, worker_pipe = Pipe()
+        p = Process(target=GstVideoSourceManager._get_available_video_modes,
+                args=(worker_pipe, ), kwargs=kwargs)
+        p.start()
+        video_modes = master_pipe.recv()
+        p.join()
+        return video_modes
+
+    @staticmethod
+    def _get_available_video_modes(pipe_conn, **kwargs):
         video_source_manager = GstVideoSourceManager()
         caps = video_source_manager.query_device_extracted_caps(**kwargs)
         video_modes = []
@@ -115,7 +137,7 @@ class GstVideoSourceManager(object):
             for c in caps:
                 c['device'] = device
                 video_modes.append(c)
-        return video_modes
+        pipe_conn.send(video_modes)
 
     @staticmethod
     def validate(extracted_caps):

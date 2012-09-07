@@ -1,5 +1,6 @@
 from __future__ import division
-from pprint import pprint
+from pprint import pprint, pformat
+from multiprocessing import Process
 
 try:
     import pygst
@@ -35,7 +36,8 @@ def get_video_mode_enum(video_modes=None):
 def select_video_mode(video_modes):
     video_mode_map = get_video_mode_map(video_modes)
     video_keys = sorted(video_mode_map.keys())
-    valid, response = field_entry_dialog(get_video_mode_enum(video_modes))
+    enum = get_video_mode_enum(video_modes)
+    valid, response = field_entry_dialog(enum.using(default=video_keys[0]))
     try:
         if valid:
             return video_mode_map[response]
@@ -85,7 +87,7 @@ def create_video_source(device, caps_str):
     return filtered_input
 
 
-if __name__ == '__main__':
+def test_pipeline():
     pipeline = gst.Pipeline()
     video_sink = gst.element_factory_make('autovideosink', 'video_sink')
     video_source = select_video_source()
@@ -93,3 +95,9 @@ if __name__ == '__main__':
     video_source.link(video_sink)
     pipeline.set_state(gst.STATE_PLAYING)
     glib.MainLoop().run()
+
+
+if __name__ == '__main__':
+    p = Process(target=test_pipeline)
+    p.start()
+    p.join()
