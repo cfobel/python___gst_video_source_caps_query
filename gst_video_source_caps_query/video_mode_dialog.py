@@ -145,7 +145,8 @@ class _GStreamerProcess(Process):
                 self._pipeline = get_pipeline(video_source)
         elif request['command'] == 'start':
             if self._pipeline:
-                self._pipeline.set_state(gst.STATE_PLAYING)
+                result = self._pipeline.set_state(gst.STATE_PLAYING)
+                return (result != gst.STATE_CHANGE_FAILURE)
         elif request['command'] == 'stop':
             if self._pipeline:
                 self._pipeline.set_state(gst.STATE_NULL)
@@ -192,11 +193,12 @@ class GStreamerProcess(object):
     def create(self, video_caps):
         self.master_pipe.send({'command': 'create', 'video_caps': video_caps})
 
-    def start(self, block=True):
+    def start(self):
         logging.debug('sending START')
-        self.master_pipe.send({'command': 'start', 'ack': block})
-        if block:
-            response = self.master_pipe.recv()
+        self.master_pipe.send({'command': 'start', 'ack': True})
+        response = self.master_pipe.recv()
+        if not response['result']:
+            raise RuntimeError, 'Unable to start pipeline.  Is device already in use?'
 
     def stop(self, block=True):
         logging.debug('sending STOP')
@@ -209,12 +211,12 @@ class GStreamerProcess(object):
         if block:
             response = self.master_pipe.recv()
 
-    def run(self):
+    def run(self, sleep_duration=1.5):
         video_caps = self.select_video_caps()
         self.create(video_caps)
         for i in range(1):
             self.start()
-            time.sleep(1.5)
+            time.sleep(sleep_duration)
             self.stop()
         self.reset()
 
@@ -242,7 +244,9 @@ if __name__ == '__main__':
     logging.basicConfig(format='%(message)s', loglevel=logging.INFO)
     logging.info('Using GStreamerProcess')
     p = GStreamerProcess()
-    print p.get_available_video_modes(format_='YUY2')
-    p.run()
-    p.run()
+    pprint(p.get_available_video_modes(format_='YUY2'))
+    try:
+        p.run(15)
+    except RuntimeError, why:
+        logging.error('%s' % why)
     p.join()

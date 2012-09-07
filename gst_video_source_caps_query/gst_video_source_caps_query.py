@@ -26,7 +26,7 @@ class DeviceNotFound(Exception):
     pass
 
 
-def _get_available_video_modes(pipe_conn, **kwargs):
+def get_available_video_modes(**kwargs):
     video_source_manager = GstVideoSourceManager()
     caps = video_source_manager.query_device_extracted_caps(**kwargs)
     video_modes = []
@@ -34,22 +34,6 @@ def _get_available_video_modes(pipe_conn, **kwargs):
         for c in caps:
             c['device'] = device
             video_modes.append(c)
-    #pipe_conn.send(video_modes)
-    return video_modes
-
-
-def get_available_video_modes(**kwargs):
-    #master_pipe, worker_pipe = Pipe()
-    if False:
-        p = Process(target=_get_available_video_modes,
-                args=(worker_pipe, ), kwargs=kwargs)
-        p.start()
-        video_modes = master_pipe.recv()
-        p.join()
-    else:
-        #_get_available_video_modes(worker_pipe)
-        #video_modes = master_pipe.recv()
-        video_modes = _get_available_video_modes(None)
     return video_modes
 
 
@@ -61,8 +45,6 @@ def get_video_source_configs():
             devices = path('/dev/v4l/by-id').listdir()
         except OSError:
             raise DeviceNotFound, 'No devices available'
-            #devices = [p for p in path('/dev').listdir()
-                    #if p.name.startswith('video')]
         device_key = 'device'
     else:
         try:
