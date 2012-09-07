@@ -9,7 +9,8 @@ except ImportError:
     pass
 import gst
 import glib
-from gst_video_source_caps_query import GstVideoSourceManager, FilteredInput
+from gst_video_source_caps_query import GstVideoSourceManager, FilteredInput,\
+        get_available_video_modes, get_video_source_configs
 from pygtkhelpers.ui.extra_widgets import Enum, Form
 from pygtkhelpers.ui.form_view_dialog import FormViewDialog, create_form_view
 from pygtkhelpers.ui.extra_dialogs import field_entry_dialog
@@ -26,7 +27,7 @@ def get_video_mode_map(video_modes):
 
 def get_video_mode_enum(video_modes=None):
     if video_modes is None:
-        video_modes = GstVideoSourceManager.get_available_video_modes(
+        video_modes = get_available_video_modes(
                 format_='YUY2')
     video_mode_map = get_video_mode_map(video_modes)
     video_keys = sorted(video_mode_map.keys())
@@ -46,7 +47,7 @@ def select_video_mode(video_modes):
 
 
 def select_video_caps():
-    video_modes = GstVideoSourceManager.get_available_video_modes(format_='YUY2')
+    video_modes = get_available_video_modes(format_='YUY2')
     selected_mode = select_video_mode(video_modes)
     if selected_mode:
         return selected_mode['device'], GstVideoSourceManager.get_caps_string(selected_mode)
@@ -56,7 +57,7 @@ def select_video_caps():
 
 def get_video_mode_form(video_modes=None):
     if video_modes is None:
-        video_modes = GstVideoSourceManager.get_available_video_modes(
+        video_modes = get_available_video_modes(
                 format_='YUY2')
     video_mode_map = get_video_mode_map(video_modes)
     video_keys = sorted(video_mode_map.keys())
@@ -81,7 +82,7 @@ def select_video_source():
 
 def create_video_source(device, caps_str):
     video_source = GstVideoSourceManager.get_video_source()
-    device_key, devices = GstVideoSourceManager.get_video_source_configs()
+    device_key, devices = get_video_source_configs()
     video_source.set_property(device_key, device)
     filtered_input = FilteredInput('filtered_input', caps_str, video_source)
     return filtered_input
