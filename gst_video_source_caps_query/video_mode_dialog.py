@@ -1,6 +1,6 @@
 from __future__ import division
 from pprint import pprint, pformat
-from multiprocessing import Process
+from multiprocessing import Process, Pipe
 
 try:
     import pygst
@@ -98,7 +98,91 @@ def test_pipeline():
     glib.MainLoop().run()
 
 
+def get_pipeline():
+    pipeline = gst.Pipeline()
+    video_sink = gst.element_factory_make('autovideosink', 'video_sink')
+    video_source = select_video_source()
+    pipeline.add(video_sink, video_source)
+    video_source.link(video_sink)
+    return pipeline
+
+
+class _GStreamerProcess(Process):
+    def __init__(self, *args, **kwargs):
+        super(_GStreamerProcess, self).__init__(*args, **kwargs)
+    
+    def start(self, pipe_connection):
+        self._pipe = pipe_connection
+        return super(_GStreamerProcess, self).start()
+
+    def run(self):
+        self._pipeline = None
+        self._check_count = 0
+        self._main_loop = glib.MainLoop()
+        glib.timeout_add(500, self._update_state)
+        self._main_loop.run()
+
+    def _finish(self):
+        self._main_loop.quit()
+        del self._pipeline
+        self._pipeline = None
+
+    def _process_request(self, request):
+        if request['command'] == 'start':
+            if self._pipeline is None:
+                self._pipeline = get_pipeline()
+            self._pipeline.set_state(gst.STATE_PLAYING)
+        elif request['command'] == 'stop':
+            if self._pipeline:
+                self._pipeline.set_state(gst.STATE_NULL)
+        elif request['command'] == 'finish':
+            self._finish()
+            raise SystemExit
+
+    def _update_state(self):
+        while self._pipe.poll():
+            request = self._pipe.recv()
+            print '  [request] {}'.format(request)
+            try:
+                result = self._process_request(request)
+                if request.get('ack', False):
+                    self._pipe.send({'result': result})
+            except SystemExit:
+                return False
+        return True
+
+
+class GStreamerProcess(object):
+    def __init__(self):
+        self.master_pipe, self.worker_pipe = Pipe()
+        self._init_child()
+
+    def _init_child(self):
+        self._process = _GStreamerProcess(args=(self.worker_pipe, ))
+        self._process.start(self.worker_pipe)
+
+    def run(self):
+        import time
+        print 'sending START'
+        self.master_pipe.send({'command': 'start', 'ack': True})
+        result = self.master_pipe.recv()
+        print result
+        time.sleep(1)
+        print 'sending STOP'
+        self.master_pipe.send({'command': 'stop'})
+        for i in range(3):
+            time.sleep(1)
+            print 'sending START'
+            self.master_pipe.send({'command': 'start'})
+            time.sleep(1)
+            print 'sending STOP'
+            self.master_pipe.send({'command': 'stop'})
+        print 'sending FINISH'
+        self.master_pipe.send({'command': 'finish'})
+        p.join()
+
+
 if __name__ == '__main__':
-    p = Process(target=test_pipeline)
-    p.start()
-    p.join()
+    print 'Using GStreamerProcess'
+    p = GStreamerProcess()
+    p.run()
