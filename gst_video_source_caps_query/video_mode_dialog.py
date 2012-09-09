@@ -13,7 +13,7 @@ finally:
     import gst
 import glib
 from gst_video_source_caps_query import GstVideoSourceManager, FilteredInput,\
-        get_available_video_modes, get_video_source_configs
+        get_available_video_modes, get_video_source_configs, DeviceNotFound
 from pygtkhelpers.ui.extra_widgets import Enum, Form
 from pygtkhelpers.ui.form_view_dialog import FormViewDialog, create_form_view
 from pygtkhelpers.ui.extra_dialogs import field_entry_dialog
@@ -135,7 +135,10 @@ class _GStreamerProcess(Process):
         self._check_count = 0
         self._main_loop = glib.MainLoop()
         glib.timeout_add(500, self._update_state)
-        self._main_loop.run()
+        try:
+            self._main_loop.run()
+        except DeviceNotFound:
+            self._finish()
 
     def _finish(self):
         self._cleanup_pipeline()
@@ -182,6 +185,9 @@ class _GStreamerProcess(Process):
                 result = self._process_request(request)
                 if request.get('ack', False):
                     self._pipe.send({'result': result})
+            except DeviceNotFound:
+                if request.get('ack', False):
+                    self._pipe.send({'result': None, 'error': True})
             except SystemExit:
                 return False
         return True
@@ -202,6 +208,8 @@ class GStreamerProcess(object):
         # Wait for result so we block until video caps have been
         # selected
         response = self.master_pipe.recv()
+        if response.get('error', False):
+            raise DeviceNotFound, 'No devices/video modes available'
         return response['result']
 
     def create(self, video_caps):
@@ -272,12 +280,12 @@ class GStreamerProcess(object):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(format='%(message)s', loglevel=logging.INFO)
+    logging.basicConfig(format='[%(levelname)s] %(message)s', loglevel=logging.INFO)
     logging.info('Using GStreamerProcess')
     p = GStreamerProcess()
     pprint(p.get_available_video_modes(format_='YUY2'))
     try:
         p.run(15)
-    except RuntimeError, why:
+    except (RuntimeError, DeviceNotFound), why:
         logging.error('%s' % why)
     p.join()

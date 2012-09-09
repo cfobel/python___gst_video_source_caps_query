@@ -34,6 +34,8 @@ def get_available_video_modes(**kwargs):
         for c in caps:
             c['device'] = device
             video_modes.append(c)
+    if not video_modes:
+        raise DeviceNotFound, 'No video modes available.'
     return video_modes
 
 
