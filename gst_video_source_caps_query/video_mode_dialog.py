@@ -18,13 +18,15 @@ from pygtkhelpers.ui.form_view_dialog import FormViewDialog, create_form_view
 from pygtkhelpers.ui.extra_dialogs import field_entry_dialog
 
 
-def get_video_mode_map(video_modes):
-    format_cap = lambda c: '[%s] ' % getattr(c['device'], 'name',
-            c['device'])[:20] + '{width:4d}x{height:d} {fps:2.0f}fps '\
-                    '({fourcc:s})'.format(
-                            fps=c['framerate'].num / c['framerate'].denom, **c)
-    video_mode_map = dict([(format_cap(c), c) for c in video_modes]) 
-    return video_mode_map
+def get_video_mode_form(video_modes=None):
+    if video_modes is None:
+        video_modes = get_available_video_modes(
+                format_='YUY2')
+    video_mode_map = get_video_mode_map(video_modes)
+    video_keys = sorted(video_mode_map.keys())
+    form = Form.of(Enum.named('video_mode').valued(
+            *video_keys).using(default=video_keys[0]))
+    return form
 
 
 def get_video_mode_enum(video_modes=None):
@@ -34,6 +36,15 @@ def get_video_mode_enum(video_modes=None):
     video_mode_map = get_video_mode_map(video_modes)
     video_keys = sorted(video_mode_map.keys())
     return Enum.named('video_mode').valued(*video_keys)
+
+
+def get_video_mode_map(video_modes):
+    format_cap = lambda c: '[%s] ' % getattr(c['device'], 'name',
+            c['device'])[:20] + '{width:4d}x{height:d} {fps:2.0f}fps '\
+                    '({fourcc:s})'.format(
+                            fps=c['framerate'].num / c['framerate'].denom, **c)
+    video_mode_map = dict([(format_cap(c), c) for c in video_modes]) 
+    return video_mode_map
 
 
 def select_video_mode(video_modes):
@@ -119,7 +130,7 @@ class _GStreamerProcess(Process):
         return super(_GStreamerProcess, self).start()
 
     def run(self):
-        self._pipeline = None
+        self.pipeline = None
         self._check_count = 0
         self._main_loop = glib.MainLoop()
         glib.timeout_add(500, self._update_state)
@@ -130,26 +141,26 @@ class _GStreamerProcess(Process):
         self._main_loop.quit()
 
     def _cleanup_pipeline(self):
-        if self._pipeline:
-            del self._pipeline
-            self._pipeline = None
+        if self.pipeline:
+            del self.pipeline
+            self.pipeline = None
 
     def _process_request(self, request):
         if request['command'] == 'create':
             '''
             Create a pipeline
             '''
-            if self._pipeline is None:
+            if self.pipeline is None:
                 device, caps_str = request['video_caps']
                 video_source = create_video_source(device, caps_str)
-                self._pipeline = get_pipeline(video_source)
+                self.pipeline = get_pipeline(video_source)
         elif request['command'] == 'start':
-            if self._pipeline:
-                result = self._pipeline.set_state(gst.STATE_PLAYING)
+            if self.pipeline:
+                result = self.pipeline.set_state(gst.STATE_PLAYING)
                 return (result != gst.STATE_CHANGE_FAILURE)
         elif request['command'] == 'stop':
-            if self._pipeline:
-                self._pipeline.set_state(gst.STATE_NULL)
+            if self.pipeline:
+                self.pipeline.set_state(gst.STATE_NULL)
         elif request['command'] == 'reset':
             self._cleanup_pipeline()
         elif request['command'] == 'finish':
@@ -176,9 +187,11 @@ class _GStreamerProcess(Process):
 
 
 class GStreamerProcess(object):
+    child_class = _GStreamerProcess
+
     def __init__(self):
         self.master_pipe, self.worker_pipe = Pipe()
-        self._process = _GStreamerProcess(args=(self.worker_pipe, ))
+        self._process = self.child_class(args=(self.worker_pipe, ))
         self._process.start(self.worker_pipe)
         self._finished = False
 
@@ -238,6 +251,23 @@ class GStreamerProcess(object):
         response = self.master_pipe.recv()
         return response['result']
 
+    def get_video_mode_form(self, video_modes=None):
+        if video_modes is None:
+            video_modes = self.get_available_video_modes(
+                    format_='YUY2')
+        video_mode_map = get_video_mode_map(video_modes)
+        video_keys = sorted(video_mode_map.keys())
+        form = Form.of(Enum.named('video_mode').valued(
+                *video_keys).using(default=video_keys[0]))
+        return form
+
+    def get_video_mode_enum(self, video_modes=None):
+        if video_modes is None:
+            video_modes = self.get_available_video_modes(
+                    format_='YUY2')
+        video_mode_map = get_video_mode_map(video_modes)
+        video_keys = sorted(video_mode_map.keys())
+        return Enum.named('video_mode').valued(*video_keys)
 
 
 if __name__ == '__main__':
