@@ -7,9 +7,10 @@ import logging
 try:
     import pygst
     pygst.require("0.10")
-except ImportError:
+except:
     pass
-import gst
+finally:
+    import gst
 import glib
 from gst_video_source_caps_query import GstVideoSourceManager, FilteredInput,\
         get_available_video_modes, get_video_source_configs

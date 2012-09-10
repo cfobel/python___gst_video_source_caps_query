@@ -9,7 +9,7 @@ from path import path
 try:
     import pygst
     pygst.require("0.10")
-except ImportError:
+except:
     pass
 finally:
     import gst
