@@ -4,6 +4,7 @@ import logging
 import platform
 from pprint import pprint
 from multiprocessing import Process, Pipe
+import traceback
 
 from path import path
 try:
@@ -261,7 +262,12 @@ class FilteredInput(gst.Bin):
     def __init__(self, name, caps_str, video_src):
         super(FilteredInput, self).__init__(name)
 
-        caps = gst.Caps(caps_str)
+        try:
+            caps = gst.Caps(caps_str)
+        except (Exception, ), why:
+            traceback.print_exc()
+            print 'name: {}, caps_str: "{}"'.format(name, caps_str)
+            raise
         caps_filter = gst.element_factory_make('capsfilter', 'caps_filter')
         caps_filter.set_property('caps', caps)
 

@@ -95,9 +95,14 @@ def select_video_source():
 
 
 def create_video_source(device, caps_str):
-    video_source = GstVideoSourceManager.get_video_source()
-    device_key, devices = get_video_source_configs()
-    video_source.set_property(device_key, device)
+    if device is None:
+        # Assume blank video test src
+        video_source = gst.element_factory_make('videotestsrc', 'video_source')
+        video_source.set_property('pattern', 2)
+    else:
+        video_source = GstVideoSourceManager.get_video_source()
+        device_key, devices = get_video_source_configs()
+        video_source.set_property(device_key, device)
     filtered_input = FilteredInput('filtered_input', caps_str, video_source)
     return filtered_input
 
@@ -156,6 +161,7 @@ class _GStreamerProcess(Process):
             '''
             if self.pipeline is None:
                 device, caps_str = request['video_caps']
+                print '''{'device': %s, 'caps_str': %s}''' % (device, caps_str)
                 video_source = create_video_source(device, caps_str)
                 self.pipeline = get_pipeline(video_source)
         elif request['command'] == 'start':
